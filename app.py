@@ -123,3 +123,62 @@ def index():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    weather_data = None
+    if request.method == "POST":
+        temperature_unit = request.form['unit']
+        units = 'metric' if temperature_unit == 'Celsius' else 'imperial'
+        
+        # Get coordinates if available
+        lat = request.form.get('lat')
+        lon = request.form.get('lon')
+        
+        if lat and lon:
+            # Use coordinates for weather lookup
+            url = f"{WEATHER_BASE_URL}?lat={lat}&lon={lon}&appid={API_KEY}&units={units}"
+        else:
+            # Fallback to city name
+            location = request.form['location']
+            url = f"{WEATHER_BASE_URL}?q={location}&appid={API_KEY}&units={units}"
+        
+        try:
+            response = requests.get(url)
+            data = response.json()
+            
+            if data.get('cod') == 200:
+                # Get coordinates for historical data
+                lat = data['coord']['lat']
+                lon = data['coord']['lon']
+                historical_data = get_historical_weather(lat, lon, units)
+                
+                weather_data = {
+                    "current": {
+                        "temperature": round(data['main']['temp']),
+                        "feels_like": round(data['main']['feels_like']),
+                        "humidity": data['main']['humidity'],
+                        "wind_speed": data['wind']['speed'],
+                        "description": data['weather'][0]['description'].capitalize(),
+                        "icon": get_weather_icon(data['weather'][0]['icon']),
+                        "location": data['name'],
+                        "unit": temperature_unit,
+                        "pressure": data['main']['pressure'],
+                        "visibility": data.get('visibility', 0) / 1000,
+                        "date": datetime.now().strftime('%Y-%m-%d %H:%M'),
+                        "coordinates": {
+                            "lat": lat,
+                            "lon": lon
+                        }
+                    },
+                    "historical": historical_data
+                }
+            else:
+                weather_data = {"error": "Location not found!"}
+                
+        except Exception as e:
+            weather_data = {"error": f"An error occurred: {str(e)}"}
+    
+    return render_template("index.html", weather_data=weather_data)
