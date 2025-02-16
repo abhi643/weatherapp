@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
+<!-- Previous head content remains the same -->
 <head>
-    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=places"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Modern Weather App</title>
@@ -10,52 +11,34 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
 </head>
 <body>
-
     <!-- Add this right after the opening body tag -->
 <button class="theme-switch" id="themeSwitch">
     <i class="fas fa-moon dark-icon"></i>
     <i class="fas fa-sun light-icon" style="display: none;"></i>
 </button>
 
-    <div class="app-container">
-        <!-- Search Section -->
-        <!-- Update the search section in the body -->
-<div class="search-section">
-    <form method="POST" class="search-form" id="weatherForm">
-        <div class="search-box">
-            <i class="fas fa-search"></i>
-            <input 
-                type="text" 
-                id="locationInput" 
-                name="location" 
-                placeholder="Search for a location..." 
-                required
-            >
-            <input type="hidden" id="lat" name="lat">
-            <input type="hidden" id="lon" name="lon">
-        </div>
-        <select name="unit" class="unit-select" id="unitSelect">
-            <option value="Celsius">°C</option>
-            <option value="Fahrenheit">°F</option>
-        </select>
-        <button type="button" id="getCurrentLocation" class="location-btn">
-            <i class="fas fa-location-arrow"></i>
-        </button>
-        <button type="submit">Get Weather</button>
-    </form>
-    
-    <!-- Add map modal -->
-    <div id="mapModal" class="map-modal">
-        <div class="map-modal-content">
-            <div class="map-header">
-                <h3>Select Location</h3>
-                <button class="close-map">&times;</button>
+<div class="app-container">
+    <div class="search-section">
+        <form method="POST" class="search-form" id="weatherForm" autocomplete="off">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input 
+                    type="text" 
+                    id="locationInput" 
+                    name="location" 
+                    placeholder="Enter city name..." 
+                    required
+                    value="{{ weather_data.current.location if weather_data and not weather_data.error }}"
+                >
             </div>
-            <div id="map"></div>
-            <button id="confirmLocation" class="confirm-btn">Confirm Location</button>
-        </div>
+            <select name="unit" class="unit-select" id="unitSelect">
+                <option value="Celsius">°C</option>
+                <option value="Fahrenheit">°F</option>
+            </select>
+            <button type="submit">Get Weather</button>
+        </form>
     </div>
-</div>
+        
 
         {% if weather_data %}
             {% if weather_data.error %}
@@ -315,258 +298,159 @@
     </script>
 
     <!-- Add this script after the existing theme script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const unitSelect = document.getElementById('unitSelect');
+            
+            // Conversion functions
+            function celsiusToFahrenheit(celsius) {
+                return (celsius * 9/5) + 32;
+            }
+            
+            function fahrenheitToCelsius(fahrenheit) {
+                return (fahrenheit - 32) * 5/9;
+            }
+            
+            // Function to extract number from text containing temperature
+            function extractTemperature(text) {
+                const match = text.match(/(-?\d+\.?\d*)/);
+                return match ? parseFloat(match[0]) : null;
+            }
+            
+            // Function to update displayed temperatures
+            function updateTemperatures(newUnit) {
+                // Update main temperature displays
+                const tempElements = document.querySelectorAll('.temp-value');
+                const tempUnitElements = document.querySelectorAll('.temp-unit');
+                
+                // Update feels like temperature
+                const feelsLikeElement = document.querySelector('.detail-item:nth-child(1) span');
+                if (feelsLikeElement) {
+                    const feelsLikeText = feelsLikeElement.textContent;
+                    const currentTemp = extractTemperature(feelsLikeText);
+                    if (currentTemp !== null) {
+                        let newTemp;
+                        if (newUnit === 'Fahrenheit') {
+                            newTemp = celsiusToFahrenheit(currentTemp);
+                        } else {
+                            newTemp = fahrenheitToCelsius(currentTemp);
+                        }
+                        feelsLikeElement.textContent = `Feels like: ${newTemp.toFixed(1)}°${newUnit[0]}`;
+                    }
+                }
+                
+                // Update all other temperature values
+                tempElements.forEach((element) => {
+                    const currentTemp = parseFloat(element.textContent);
+                    if (!isNaN(currentTemp)) {
+                        let newTemp;
+                        if (newUnit === 'Fahrenheit') {
+                            newTemp = celsiusToFahrenheit(currentTemp);
+                        } else {
+                            newTemp = fahrenheitToCelsius(currentTemp);
+                        }
+                        element.textContent = newTemp.toFixed(1);
+                    }
+                });
+                
+                // Update temperature unit displays
+                const unitSymbol = newUnit === 'Fahrenheit' ? '°F' : '°C';
+                tempUnitElements.forEach((element) => {
+                    element.textContent = unitSymbol;
+                });
+                
+                // Update min/max temperatures in historical cards
+                const tempRangeElements = document.querySelectorAll('.temp-range span');
+                tempRangeElements.forEach((element) => {
+                    const currentTemp = extractTemperature(element.textContent);
+                    if (currentTemp !== null) {
+                        let newTemp;
+                        if (newUnit === 'Fahrenheit') {
+                            newTemp = celsiusToFahrenheit(currentTemp);
+                        } else {
+                            newTemp = fahrenheitToCelsius(currentTemp);
+                        }
+                        const label = element.textContent.includes('L:') ? 'L: ' : 'H: ';
+                        element.textContent = `${label}${newTemp.toFixed(1)}°`;
+                    }
+                });
+                
+                // Update chart if it exists
+                updateChartTemperatures(newUnit);
+            }
+            
+            // Function to update chart temperatures
+            function updateChartTemperatures(newUnit) {
+                const chart = Chart.getChart('temperatureChart');
+                if (!chart) return;
+                
+                chart.data.datasets.forEach((dataset) => {
+                    dataset.data = dataset.data.map((temp) => {
+                        if (newUnit === 'Fahrenheit') {
+                            return celsiusToFahrenheit(temp);
+                        } else {
+                            return fahrenheitToCelsius(temp);
+                        }
+                    });
+                });
+                
+                chart.update();
+            }
+            
+            // Get saved unit preference or default to Celsius
+            const savedUnit = localStorage.getItem('temperatureUnit') || 'Celsius';
+            unitSelect.value = savedUnit;
+            
+            // Add event listener for unit changes
+            unitSelect.addEventListener('change', function() {
+                const newUnit = this.value;
+                localStorage.setItem('temperatureUnit', newUnit);
+                
+                // Only convert if weather data is displayed
+                if (document.querySelector('.weather-card')) {
+                    updateTemperatures(newUnit);
+                }
+            });
+            
+            // Update form submission to include saved preference
+            const form = document.querySelector('.search-form');
+            form.addEventListener('submit', function(e) {
+                unitSelect.value = localStorage.getItem('temperatureUnit') || 'Celsius';
+            });
+        });
+        </script>
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const unitSelect = document.getElementById('unitSelect');
-        
-        // Get saved unit preference or default to Celsius
-        const savedUnit = localStorage.getItem('temperatureUnit') || 'Celsius';
-        unitSelect.value = savedUnit;
-        
-        // Save unit preference when changed
-        unitSelect.addEventListener('change', function() {
-            localStorage.setItem('temperatureUnit', this.value);
+        const form = document.getElementById('weatherForm');
+        const locationInput = document.getElementById('locationInput');
+
+        // Store the initial value when the page loads
+        let currentLocation = locationInput.value;
+
+        // Update stored value when user types
+        locationInput.addEventListener('input', function() {
+            currentLocation = this.value;
         });
-        
-        // Update form submission to include saved preference
-        const form = document.querySelector('.search-form');
+
         form.addEventListener('submit', function(e) {
-            // Ensure the select value matches saved preference
-            unitSelect.value = localStorage.getItem('temperatureUnit') || 'Celsius';
+            // Prevent the browser's default form clearing behavior
+            e.preventDefault();
+
+            // Store the current location value before form submission
+            localStorage.setItem('lastSearchedLocation', locationInput.value);
+
+            // Submit the form programmatically
+            this.submit();
         });
+
+        // Restore the last searched location if the input is empty
+        if (!locationInput.value && localStorage.getItem('lastSearchedLocation')) {
+            locationInput.value = localStorage.getItem('lastSearchedLocation');
+        }
     });
     </script>
-
-    <script>
-        // Add this script after your existing scripts
-document.addEventListener('DOMContentLoaded', function() {
-    const unitSelect = document.getElementById('unitSelect');
-    
-    // Temperature conversion functions
-    function celsiusToFahrenheit(celsius) {
-        return (celsius * 9/5) + 32;
-    }
-    
-    function fahrenheitToCelsius(fahrenheit) {
-        return (fahrenheit - 32) * 5/9;
-    }
-    
-    // Update all temperature displays
-    function updateTemperatures(newUnit) {
-        // Current temperature
-        const tempElement = document.querySelector('.temp-value');
-        const feelsLikeElement = document.querySelector('.detail-item:nth-child(1) span');
         
-        if (tempElement && feelsLikeElement) {
-            const currentTemp = parseFloat(tempElement.textContent);
-            const feelsLikeTemp = parseFloat(feelsLikeElement.textContent);
-            
-            if (newUnit === 'Fahrenheit') {
-                tempElement.textContent = Math.round(celsiusToFahrenheit(currentTemp));
-                feelsLikeElement.textContent = `Feels like: ${Math.round(celsiusToFahrenheit(feelsLikeTemp))}°F`;
-            } else {
-                tempElement.textContent = Math.round(fahrenheitToCelsius(currentTemp));
-                feelsLikeElement.textContent = `Feels like: ${Math.round(fahrenheitToCelsius(feelsLikeTemp))}°C`;
-            }
-        }
-        
-        // Historical temperatures
-        const historicalCards = document.querySelectorAll('.historical-day-card');
-        historicalCards.forEach(card => {
-            const tempElement = card.querySelector('.historical-temp .temp-value');
-            const minMaxElement = card.querySelector('.temp-range');
-            
-            if (tempElement && minMaxElement) {
-                const temp = parseFloat(tempElement.textContent);
-                const minTemp = parseFloat(minMaxElement.querySelector('.min').textContent.split(':')[1]);
-                const maxTemp = parseFloat(minMaxElement.querySelector('.max').textContent.split(':')[1]);
-                
-                if (newUnit === 'Fahrenheit') {
-                    tempElement.textContent = celsiusToFahrenheit(temp).toFixed(1);
-                    minMaxElement.innerHTML = `
-                        <span class="min">L: ${celsiusToFahrenheit(minTemp).toFixed(1)}°</span>
-                        <span class="max">H: ${celsiusToFahrenheit(maxTemp).toFixed(1)}°</span>
-                    `;
-                } else {
-                    tempElement.textContent = fahrenheitToCelsius(temp).toFixed(1);
-                    minMaxElement.innerHTML = `
-                        <span class="min">L: ${fahrenheitToCelsius(minTemp).toFixed(1)}°</span>
-                        <span class="max">H: ${fahrenheitToCelsius(maxTemp).toFixed(1)}°</span>
-                    `;
-                }
-            }
-        });
-        
-        // Update chart if it exists
-        const chart = Chart.getChart('temperatureChart');
-        if (chart) {
-            const datasets = chart.data.datasets;
-            datasets.forEach(dataset => {
-                dataset.data = dataset.data.map(temp => 
-                    newUnit === 'Fahrenheit' ? celsiusToFahrenheit(temp) : fahrenheitToCelsius(temp)
-                );
-            });
-            chart.update();
-        }
-        
-        // Update unit display
-        const unitDisplays = document.querySelectorAll('.temp-unit');
-        unitDisplays.forEach(display => {
-            display.textContent = newUnit === 'Fahrenheit' ? '°F' : '°C';
-        });
-    }
-    
-    // Handle unit change
-    unitSelect.addEventListener('change', function() {
-        const newUnit = this.value;
-        localStorage.setItem('temperatureUnit', newUnit);
-        updateTemperatures(newUnit);
-    });
-    
-    // Initialize with saved preference
-    const savedUnit = localStorage.getItem('temperatureUnit') || 'Celsius';
-    unitSelect.value = savedUnit;
-    
-    // Update wind speed unit display
-    function updateWindSpeed(newUnit) {
-        const windSpeedElement = document.querySelector('.detail-item:nth-child(2) span');
-        if (windSpeedElement) {
-            const speed = parseFloat(windSpeedElement.textContent.split(':')[1]);
-            if (newUnit === 'Fahrenheit') {
-                // Convert m/s to mph
-                windSpeedElement.textContent = `Wind: ${(speed * 2.237).toFixed(1)} mph`;
-            } else {
-                // Convert mph to m/s
-                windSpeedElement.textContent = `Wind: ${(speed / 2.237).toFixed(1)} m/s`;
-            }
-        }
-    }
-});
-    </script>
-
-
-<script>
-    let map, marker, autocomplete;
-    let selectedLocation = null;
-    
-    function initGoogleMaps() {
-        // Initialize autocomplete
-        const input = document.getElementById('locationInput');
-        autocomplete = new google.maps.places.Autocomplete(input);
-        
-        // Initialize map
-        map = new google.maps.Map(document.getElementById('map'), {
-            zoom: 12,
-            center: { lat: 0, lng: 0 },
-            styles: isDarkMode() ? darkMapStyle : lightMapStyle
-        });
-        
-        // Create marker
-        marker = new google.maps.Marker({
-            map: map,
-            draggable: true
-        });
-        
-        // Handle marker drag
-        marker.addListener('dragend', function() {
-            const position = marker.getPosition();
-            updateLocationFields(position.lat(), position.lng());
-        });
-        
-        // Handle map click
-        map.addListener('click', function(e) {
-            placeMarker(e.latLng);
-        });
-        
-        // Handle place selection
-        autocomplete.addListener('place_changed', function() {
-            const place = autocomplete.getPlace();
-            if (place.geometry) {
-                placeMarker(place.geometry.location);
-                selectedLocation = place;
-            }
-        });
-    }
-    
-    function placeMarker(latLng) {
-        marker.setPosition(latLng);
-        map.panTo(latLng);
-        updateLocationFields(latLng.lat(), latLng.lng());
-    }
-    
-    function updateLocationFields(lat, lng) {
-        document.getElementById('lat').value = lat;
-        document.getElementById('lon').value = lng;
-        
-        // Reverse geocode to get address
-        const geocoder = new google.maps.Geocoder();
-        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-            if (status === 'OK' && results[0]) {
-                document.getElementById('locationInput').value = results[0].formatted_address;
-            }
-        });
-    }
-    
-    // Get current location
-    document.getElementById('getCurrentLocation').addEventListener('click', function() {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    const pos = {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude
-                    };
-                    placeMarker(pos);
-                    map.setCenter(pos);
-                    
-                    // Submit form automatically when location is obtained
-                    document.getElementById('weatherForm').submit();
-                },
-                function(error) {
-                    alert('Error getting location: ' + error.message);
-                }
-            );
-        } else {
-            alert('Geolocation is not supported by this browser.');
-        }
-    });
-    
-    // Map modal controls
-    const mapModal = document.getElementById('mapModal');
-    const locationInput = document.getElementById('locationInput');
-    
-    locationInput.addEventListener('click', function() {
-        mapModal.style.display = 'block';
-        google.maps.event.trigger(map, 'resize');
-    });
-    
-    document.querySelector('.close-map').addEventListener('click', function() {
-        mapModal.style.display = 'none';
-    });
-    
-    document.getElementById('confirmLocation').addEventListener('click', function() {
-        mapModal.style.display = 'none';
-        document.getElementById('weatherForm').submit();
-    });
-    
-    // Dark/Light map styles
-    const darkMapStyle = [
-        { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
-        { elementType: 'labels.text.stroke', stylers: [{ color: '#242f3e' }] },
-        { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
-        // ... (add more dark style options)
-    ];
-    
-    const lightMapStyle = [
-        { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
-        { elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
-        { elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f5' }] },
-        // ... (add more light style options)
-    ];
-    
-    // Initialize maps on page load
-    google.maps.event.addDomListener(window, 'load', initGoogleMaps);
-    </script>
-
-</body>
-</html>
+        <!-- Rest of the body content remains the same -->
+    </body>
+    </html>
